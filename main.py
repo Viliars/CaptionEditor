@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image
 import clipboard
 from config import samples, default_path
+from cpm import get_auto_caption
 
 
 def scan_folder(folder_path):
@@ -39,7 +40,15 @@ def update_image(idx: int, all_images: list):
     else:
         caption = ""
 
-    return image, caption
+    blip_caption_path = caption_path.parent.absolute() / "blip" / caption_path.name
+
+    if os.path.exists(blip_caption_path):
+        with open(blip_caption_path, "r") as fin:
+            blip_caption = fin.read().strip()
+    else:
+        blip_caption = ""
+
+    return image, caption, blip_caption
 
 
 def save_caption(caption, idx, all_images):
@@ -70,21 +79,36 @@ with gr.Blocks() as demo:
                 prev_button = gr.Button(icon="arrow_down.svg", value="Prev")
 
     with gr.Row():
-        image = gr.Image(type="pil", height=512, show_download_button=False, scale=4)
+        with gr.Column(scale=4):
+            with gr.Group():
+                image = gr.Image(type="pil", height=640, show_download_button=False, interactive=False)
+                blip_caption = gr.Textbox(label="BLIP", interactive=False, container=False)
+
         with gr.Column(scale=5):
-            template = gr.Textbox(interactive=False, container=False, value="{Subject}, {Hair}, {Action}, {Clothes}, {Emotions}, {Showing}, {indoors/outdoors}, {place}, {shot type}")
+            template = gr.Textbox(interactive=False, container=False, value="{Subject}, {Hair}, {Action}, {Clothes}, {Emotions}, {Showing}, {indoors/outdoors}, {Place}, {Background}, {Shot type}")
             caption = gr.Textbox(label="Caption", interactive=True)
             helpers = gr.Dataset(label="Helpers", components=[caption], samples=samples, samples_per_page=100)
-                
+
             save_caption_button = gr.Button("Save caption")
 
-    scan_button.click(scan_folder, inputs=image_folder, outputs=all_images).then(update_image, inputs=[idx, all_images], outputs=[image, caption])
-    idx.change(update_image, inputs=[idx, all_images], outputs=[image, caption])
-    idx.submit(update_image, inputs=[idx, all_images], outputs=[image, caption])
+            with gr.Accordion("AI tools", open=False):
+                with gr.Row():
+                    ai_question = gr.Textbox(label="Question", container=False, lines=1, value="Describe the image", scale=6)
+                    ai_question_clear = gr.Button(value="default", scale=1)
+                ai_caption = gr.Textbox(label="Auto caption", container=False, lines=7)
+                ai_caption_button = gr.Button(value="Describe")
+
+    scan_button.click(scan_folder, inputs=image_folder, outputs=all_images).then(update_image, inputs=[idx, all_images], outputs=[image, caption, blip_caption])
+    idx.change(update_image, inputs=[idx, all_images], outputs=[image, caption, blip_caption])
+    idx.submit(update_image, inputs=[idx, all_images], outputs=[image, caption, blip_caption])
     next_button.click(lambda x: x+1, inputs=idx, outputs=idx)
     prev_button.click(lambda x: x-1 if x > 1 else x, inputs=idx, outputs=idx)
     helpers.select(helper_select, inputs=helpers)
     save_caption_button.click(save_caption, inputs=[caption, idx, all_images])
+    ai_caption_button.click(get_auto_caption, inputs=[image, ai_question], outputs=ai_caption)
+    ai_question_clear.click(lambda: "Describe the image", outputs=ai_question)
+
+
 
 
 if __name__ == "__main__":
